@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>K线数据与Delta分析系统</title>
+    <title>K线与Delta组合分析系统</title>
     <script src="https://unpkg.com/lightweight-charts@4.2.1/dist/lightweight-charts.standalone.production.js"></script>
     <style>
         :root {
@@ -100,17 +100,8 @@
             background: #2980b9;
         }
 
-        .charts-container {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
+        .chart-container {
             margin-bottom: 20px;
-        }
-
-        @media (max-width: 1200px) {
-            .charts-container {
-                grid-template-columns: 1fr;
-            }
         }
 
         .chart-card {
@@ -118,7 +109,7 @@
             border-radius: 10px;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
             overflow: hidden;
-            height: 500px;
+            height: 700px;
         }
 
         .chart-header {
@@ -275,13 +266,29 @@
             height: 12px;
             border-radius: 2px;
         }
+
+        .chart-options {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .chart-options button {
+            background: #3a3f4b;
+            font-size: 0.8rem;
+            padding: 5px 10px;
+        }
+
+        .chart-options button.active {
+            background: var(--primary-color);
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>K线数据与Delta分析系统</h1>
-            <p class="subtitle">K线与Delta同步分析</p>
+            <h1>K线与Delta组合分析系统</h1>
+            <p class="subtitle">价格与成交量Delta的关联分析</p>
         </header>
 
         <div class="controls">
@@ -339,42 +346,23 @@
             </div>
         </div>
 
-        <div class="charts-container">
+        <div class="chart-container">
             <div class="chart-card">
                 <div class="chart-header">
-                    <span>K线图</span>
+                    <span>K线与Delta组合图</span>
                     <div class="legend">
                         <div class="legend-item">
                             <div class="legend-color" style="background-color: #26a69a;"></div>
-                            <span>阳线</span>
+                            <span>阳线/正Delta</span>
                         </div>
                         <div class="legend-item">
                             <div class="legend-color" style="background-color: #ef5350;"></div>
-                            <span>阴线</span>
+                            <span>阴线/负Delta</span>
                         </div>
                     </div>
                 </div>
                 <div class="chart-body">
-                    <div id="klineChart" class="chart"></div>
-                </div>
-            </div>
-
-            <div class="chart-card">
-                <div class="chart-header">
-                    <span>成交量Delta</span>
-                    <div class="legend">
-                        <div class="legend-item">
-                            <div class="legend-color" style="background-color: #26a69a;"></div>
-                            <span>正Delta</span>
-                        </div>
-                        <div class="legend-item">
-                            <div class="legend-color" style="background-color: #ef5350;"></div>
-                            <span>负Delta</span>
-                        </div>
-                    </div>
-                </div>
-                <div class="chart-body">
-                    <div id="deltaChart" class="chart"></div>
+                    <div id="combinedChart" class="chart"></div>
                 </div>
             </div>
         </div>
@@ -400,7 +388,7 @@
         </div>
 
         <footer>
-            <p>K线数据与Delta分析系统 &copy; 2023 | 数据更新时间: <span id="update-time"></span></p>
+            <p>K线与Delta组合分析系统 &copy; 2023 | 数据更新时间: <span id="update-time"></span></p>
         </footer>
     </div>
 
@@ -418,21 +406,17 @@
         let state = {
             klineData: [],
             currentKline: null,
-            charts: {
-                kline: null,
-                delta: null
-            },
+            chart: null,
             series: {
                 kline: null,
                 delta: null
-            },
-            isSyncing: false // 防止同步循环
+            }
         };
 
         // 初始化
         document.addEventListener('DOMContentLoaded', function() {
             initializeControls();
-            initializeCharts();
+            initializeChart();
             loadData();
             updateTime();
 
@@ -451,13 +435,12 @@
             document.getElementById('symbol').addEventListener('change', loadData);
         }
 
-        // 初始化图表
-        function initializeCharts() {
-            // K线图
-            const klineChartElement = document.getElementById('klineChart');
-            state.charts.kline = LightweightCharts.createChart(klineChartElement, {
-                width: klineChartElement.clientWidth,
-                height: klineChartElement.clientHeight,
+        // 初始化组合图表
+        function initializeChart() {
+            const chartElement = document.getElementById('combinedChart');
+            state.chart = LightweightCharts.createChart(chartElement, {
+                width: chartElement.clientWidth,
+                height: chartElement.clientHeight,
                 layout: {
                     backgroundColor: '#2a2e39',
                     textColor: '#e0e0e0',
@@ -475,109 +458,65 @@
                 },
                 rightPriceScale: {
                     borderColor: '#3a3f4b',
+                    scaleMargins: {
+                        top: 0.1,
+                        bottom: 0.2,
+                    },
                 },
                 timeScale: {
                     borderColor: '#3a3f4b',
                     timeVisible: true,
+                    secondsVisible: false,
                 },
             });
 
-            state.series.kline = state.charts.kline.addCandlestickSeries({
+            // 添加K线系列
+            state.series.kline = state.chart.addCandlestickSeries({
                 upColor: '#26a69a',
                 downColor: '#ef5350',
                 borderVisible: false,
                 wickUpColor: '#26a69a',
                 wickDownColor: '#ef5350',
+                priceScaleId: 'right', // 使用右侧价格刻度
             });
 
-            // Delta图
-            const deltaChartElement = document.getElementById('deltaChart');
-            state.charts.delta = LightweightCharts.createChart(deltaChartElement, {
-                width: deltaChartElement.clientWidth,
-                height: deltaChartElement.clientHeight,
-                layout: {
-                    backgroundColor: '#2a2e39',
-                    textColor: '#e0e0e0',
-                },
-                grid: {
-                    vertLines: {
-                        color: '#3a3f4b',
-                    },
-                    horzLines: {
-                        color: '#3a3f4b',
-                    },
-                },
-                rightPriceScale: {
-                    borderColor: '#3a3f4b',
-                },
-                timeScale: {
-                    borderColor: '#3a3f4b',
-                    timeVisible: true,
-                },
-            });
-
-            state.series.delta = state.charts.delta.addHistogramSeries({
-                color: '#26a69a',
+            // 添加Delta系列，使用左侧价格刻度
+            state.series.delta = state.chart.addHistogramSeries({
+                color: '#26a69a', // 默认颜色
                 priceFormat: {
                     type: 'volume',
                 },
-                priceScaleId: '',
-            });
-            state.charts.delta.priceScale('').applyOptions({
-                scaleMargins: {
-                    top: 0.8,
-                    bottom: 0,
-                },
+                priceScaleId: 'left', // 使用左侧价格刻度
             });
 
-            // 设置图表同步
-            setupChartSync();
+            // 配置左侧价格刻度（用于Delta）
+            state.chart.priceScale('left').applyOptions({
+                scaleMargins: {
+                    top: 0.7,  // Delta显示在图表底部
+                    bottom: 0.05,
+                },
+                borderColor: '#3a3f4b',
+            });
+
+            // 配置右侧价格刻度（用于K线）
+            state.chart.priceScale('right').applyOptions({
+                scaleMargins: {
+                    top: 0.05,  // K线显示在图表顶部
+                    bottom: 0.3,
+                },
+                borderColor: '#3a3f4b',
+            });
 
             // 窗口大小变化时调整图表大小
             window.addEventListener('resize', function() {
-                state.charts.kline.resize(
-                    document.getElementById('klineChart').clientWidth,
-                    document.getElementById('klineChart').clientHeight
-                );
-                state.charts.delta.resize(
-                    document.getElementById('deltaChart').clientWidth,
-                    document.getElementById('deltaChart').clientHeight
+                state.chart.resize(
+                    document.getElementById('combinedChart').clientWidth,
+                    document.getElementById('combinedChart').clientHeight
                 );
             });
         }
 
-        // 设置图表同步
-        function setupChartSync() {
-            // K线图时间轴变化时同步到Delta图
-            state.charts.kline.timeScale().subscribeVisibleTimeRangeChange((newRange) => {
-                if (state.isSyncing) return;
-                state.isSyncing = true;
-
-                try {
-                    state.charts.delta.timeScale().setVisibleRange(newRange);
-                } catch (e) {
-                    console.error('同步K线图到Delta图时出错:', e);
-                }
-
-                state.isSyncing = false;
-            });
-
-            // Delta图时间轴变化时同步到K线图
-            state.charts.delta.timeScale().subscribeVisibleTimeRangeChange((newRange) => {
-                if (state.isSyncing) return;
-                state.isSyncing = true;
-
-                try {
-                    state.charts.kline.timeScale().setVisibleRange(newRange);
-                } catch (e) {
-                    console.error('同步Delta图到K线图时出错:', e);
-                }
-
-                state.isSyncing = false;
-            });
-        }
-
-        // 加载数据 - 使用fetch API
+        // 加载数据
         async function loadData() {
             try {
                 showLoading();
@@ -593,7 +532,7 @@
                     state.klineData = data;
                     state.currentKline = data[data.length - 1]; // 最新K线
 
-                    updateCharts();
+                    updateChart();
                     updateCurrentData();
                     renderDataTable();
                 } else {
@@ -607,7 +546,7 @@
 
         // 模拟API调用 - 在实际应用中替换为真实的API调用
         async function simulateApiCall(timeframe, limit, symbol) {
-					const response = await fetch('https://fapi.binance.com/fapi/v1/klines?symbol='+symbol+'&limit='+limit+'&interval='+timeframe);
+          const response = await fetch('https://fapi.binance.com/fapi/v1/klines?symbol='+symbol+'&limit='+limit+'&interval='+timeframe);
           const data = await response.json()
           return data;
         }
@@ -676,7 +615,7 @@
         }
 
         // 更新图表数据
-        function updateCharts() {
+        function updateChart() {
             // 准备K线数据
             const klineData = state.klineData.map(kline => {
                 return {
@@ -695,7 +634,7 @@
                 const delta = calculateDelta(kline).delta;
                 return {
                     time: kline[0] / 1000,
-                    value: delta,
+                    value: Math.abs(delta), // 使用绝对值，颜色表示方向
                     color: delta >= 0 ? '#26a69a' : '#ef5350'
                 };
             });
